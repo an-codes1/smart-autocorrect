@@ -4,6 +4,13 @@ A beginner-friendly English autocorrect app for a college project. It detects
 misspelled words and offers AI-powered grammar suggestions to improve text
 accuracy and fluency.
 
+> **Live demo:** <https://smart-autocorrect-nkbdlv6jkscf9tea5xwz6d.streamlit.app/>
+>
+> Free Streamlit Community Cloud hosting. Runs over HTTPS with the app's
+> security settings enabled. Spelling mode needs no model and is fast; AI Grammar
+> downloads the ~900 MB model on first use and can take several seconds per
+> check on the free tier. See "Deploying your own copy" below.
+
 ## Project objective and features
 
 * **Spelling mode** (dictionary/frequency based, using `pyspellchecker`):
@@ -15,9 +22,10 @@ accuracy and fluency.
     Streamlit are included by default and are always editable).
 * **AI Grammar mode** (local neural inference):
   - Uses the public pretrained model `vennify/t5-base-grammar-correction`.
-  - Runs entirely on the machine that runs the app - no paid API, no keys, no
+  - Runs entirely on the server that hosts the app - no paid API, no keys, no
     data upload. Processing happens in the app's server process (your computer
-    when run locally), not inside the visitor's browser.
+    when run locally; the hosting provider's server on the public demo), not
+    inside the visitor's browser.
   - Loads the model lazily and only when you ask for AI correction, then caches
     it so Streamlit reruns do not reload it. Loading is serialized with a
     process-wide concurrency guard, and `model.eval()` + `torch.inference_mode()`
@@ -119,6 +127,41 @@ The suite includes:
   limit consistency, long-word performance, session isolation);
 * Streamlit `AppTest` flows (spelling check, Clear, Load Example, oversized
   rejection, editing the final text).
+
+## Deploying your own copy on Streamlit Community Cloud (free)
+
+The repo is already wired for cloud deploys:
+
+* `requirements.txt` includes `requirements-ai.txt`, so one dependency file
+  installs everything (Streamlit, pyspellchecker, **and** the AI stack).
+* `requirements-ai.txt` installs PyTorch's **CPU-only** build on Linux via the
+  official `download.pytorch.org/whl/cpu` extra index - no multi-gigabyte CUDA
+  wheels, no GPU required. On Windows/macOS the regular PyPI wheel is used.
+* `.streamlit/config.toml` does **not** pin `server.address`, so it works both
+  locally (Streamlit's default localhost bind keeps your local run private) and
+  on the cloud (the platform manages the public bind, HTTPS and the WebSocket
+  proxy). CORS and XSRF protection stay enabled.
+* No model weights are in the repo. The grammar model downloads from the
+  Hugging Face Hub on first AI use and is pinned to a verified revision with
+  `trust_remote_code=False`.
+
+To publish your own copy:
+
+1. Push this code to your own GitHub repo (public or private).
+2. Go to <https://share.streamlit.io> and sign in with GitHub.
+3. **Create app** -> choose your repo, branch `main`, main file `app.py`.
+4. Advanced settings -> Python version **3.12**.
+5. **Deploy**. The app appears at `https://<subdomain>.streamlit.app/`.
+
+Notes for the free tier:
+
+* The first build installs CPU-only PyTorch, so expect several minutes.
+* The free tier has limited CPU and RAM. Spelling mode is lightweight. AI
+  Grammar downloads ~900 MB of weights on its first run, then performs CPU beam
+  search; each check can take several seconds and may be memory-constrained on
+  the smallest instances. If AI Grammar cannot run inside the container's RAM
+  limit, the app remains fully usable in Spelling mode (ergo the in-app note
+  that AI runs on the hosting server).
 
 ## Input limits (server-side, enforced before expensive work)
 

@@ -2,7 +2,7 @@
 
 Date: 2026-09-14
 Scope: `app.py`, `spelling_engine.py`, `grammar_engine.py`, `.streamlit/config.toml`, `requirements*.txt`, `tests/`.
-Runtime: Windows, Python 3.12.10, local-only (no public hosting, no deployment config, no external services).
+Runtime: Windows, Python 3.12.10, local-only + public demo on Streamlit Community Cloud.
 
 This review records what was inspected, what was fixed, what was verified, and
 what remains genuinely unresolved. It deliberately does **not** claim that the
@@ -20,9 +20,9 @@ app is "secure", unlimited-traffic-safe, or crash-proof.
 | 4 | Repeated typos and long/repetitive words could produce thousands of suggestion widgets and heavy edit-distance work. | Medium | `spelling_engine.py`, `app.py` | Candidate results are memoized per request; words over 40 chars or long single-character runs are skipped; a 500-entry suggestion cap stops scanning; the reviewer now shows **one selectbox per distinct word** instead of one per occurrence. |
 | 5 | No bound on concurrent AI inference; a shared cached model could run overlapping generations. | Medium | `grammar_engine.py` | Added `InferenceGuard`, a process-wide single-slot semaphore with a **short bounded wait (10 s)** and a clear busy/retry message, so a second caller is not left staring at a spinner (a 90 s wait had this risk). The slot always releases, including on error (context-manager + verified by a test). |
 | 6 | `assert` statements used for runtime checks (stripped under `-O`) and raw exception detail (which can contain internal paths) shown in the UI. | Low | `grammar_engine.py` | Replaced asserts with explicit checks that raise `GrammarModelError`; the UI error is now a friendly, generic message and the exception *type* is logged (never user text) to the terminal logger. |
-| 7 | Privacy wording implied inference happens "in the browser". | Informational | `app.py` | AI explanation now states processing runs on the app's server process (your computer locally), not the visitor's browser, and clarified no external API is used. |
-| 8 | Streamlit ran with telemetry on and default binding. | Informational | `.streamlit/config.toml` (new) | Binds `server.address = "localhost"`, `headless = true`, CORS and XSRF protection explicitly enabled, `maxUploadSize` reduced, `browser.gatherUsageStats = false`. |
-| 9 | No regression tests for the risky paths. | Informational | `tests/` | Added `test_limits.py` (24 tests) and `test_app_ui.py` (7 AppTest flows); full suite is 54 tests, all green. |
+| 7 | Privacy wording implied inference happens "in the browser". | Informational | `app.py` | AI explanation and the footer now state processing runs on the app's **hosting server** (your computer locally; the hosting provider's server on the public demo), not the visitor's browser, and clarified no external API is used. |
+| 8 | Streamlit ran with telemetry on and default binding. | Informational | `.streamlit/config.toml` (new) | Keeps CORS and XSRF protection explicitly enabled, `maxUploadSize` reduced, `browser.gatherUsageStats = false`. `server.address` is intentionally **not** pinned so the same file works locally (Streamlit's default localhost bind keeps local runs private) and on Community Cloud (the platform manages the public bind). |
+| 9 | No regression tests for the risky paths. | Informational | `tests/` | Added `test_limits.py`, `test_grammar_engine.py` and `test_app_ui.py` (AppTest flows); full suite is **56 tests**, all green. |
 
 Confirmed **not** present (no change needed): no `exec`/`eval` of user text, no
 shell command invocation, no URL fetching from submitted text, no persistent
@@ -102,15 +102,18 @@ Two kinds of evidence were collected. Only the behaviour that was actually
 observed is reported; nothing below is assumed.
 
 ### Configuration checks
-* `.streamlit/config.toml` sets `server.address = "localhost"`,
-  `server.headless = true`, `server.enableCORS = true`,
-  `server.enableXsrfProtection = true`, `server.maxUploadSize = 1` and
-  `browser.gatherUsageStats = false`.
+* `.streamlit/config.toml` sets `server.headless = true`,
+  `server.enableCORS = true`, `server.enableXsrfProtection = true`,
+  `server.maxUploadSize = 1` and `browser.gatherUsageStats = false`. It does
+  **not** set `server.address`/`server.port`, so local runs keep Streamlit's
+  default `localhost` bind (external machines cannot connect) while cloud
+  deploys let the platform choose the bind.
 * `streamlit config show` (installed Streamlit 1.63.0) recognises
   `server.enableCORS` and `server.enableXsrfProtection` as valid options with
   default `true`; our TOML keeps them enabled explicitly. `gatherUsageStats`
   default is `false`; our TOML sets it explicitly.
-* The server process loads this TOML: it started on `localhost:8501` (see below).
+* The server process loads this TOML: locally it started on `localhost:8501`
+  (see below); on the cloud the platform controls the address/port.
 
 ### Behavioural checks (observed live, not assumed)
 Started with `.venv\Scripts\python.exe -m streamlit run app.py`, then:
@@ -199,29 +202,66 @@ suite. The grammar number in particular varies run to run.
 * **Hugging Face cache symlink warning on Windows** (harmless, cosmetic) and
   the unauthenticated-request warning (`HF_TOKEN`) remain; neither affects
   attack surface here.
-* **No public deployment exists**, so load, proxy, HTTPS and abuse-dedicated
-  items were not implemented - only documented (next section).
+* **Free-tier container memory vs. AI Grammar (open question).** Local
+  measurement on this machine (Windows, Python 3.12.10) shows ~**447 MB RSS**
+  after the model is loaded and ~**1.2 GB peak RSS during an AI inference**
+  (~1.7 GB pagefile/commit). The public demo runs on Streamlit's free tier,
+  whose exact RAM limit is a provider secret; AI Grammar may exhaust it. If so,
+  Spelling mode (which never loads the model) remains fully usable; the in-app
+  privacy note already says processing happens on the hosting server. The
+  outcome is recorded in section 10. This is why the deploy uses CPU-only torch (`+cpu` wheel on
+  Linux) and why the app fails gracefully for Spelling mode if AI cannot fit.
+* **Public deployment items (HTTPS/proxy/supervision) are now the provider's
+  responsibility.** Streamlit Community Cloud manages TLS, the WebSocket proxy,
+  process supervision and the ingress; this project's `.streamlit/config.toml`
+  deliberately does not fight that (no `server.address` pin).
 
 ## 10. Local versus public deployment
 
-Running `app.py` locally with `.streamlit/config.toml`:
-* binds to `localhost` only - external machines cannot connect;
-* has no TLS, no auth, no quotas beyond the input caps;
-* is fine for a project/demo on your machine.
+**Local** (`app.py` + `.streamlit/config.toml` on your machine):
+* Streamlit's default `localhost` bind - external machines cannot connect;
+* no TLS, no auth, no quotas beyond the input caps;
+* fine for a project/demo on your machine.
 
-If you ever deploy publicly, a Cloud/VM deploy still needs, at minimum:
-* **HTTPS** termination and a **WebSocket-compatible reverse proxy** (Streamlit
-  upgrades to `/ _stcore/stream`), e.g. Caddy/Nginx config;
-* **process supervision** (restart on crash) and health monitoring;
-* **process/OS-level resource limits** (memory, CPU, request size) - not just
-  Python-level caps;
-* **abuse controls** outside the app (WAF/IP limits) and a clear privacy
-  notice that text is processed on your server;
-* host-config hardening (block error dialogs, restrict allowed origins) only if
-  the provider documents them for the installed Streamlit version.
+**Public demo** (Streamlit Community Cloud, free tier) - deployed from the same
+commit (`702c2db`), repo <https://github.com/an-codes1/smart-autocorrect>,
+live at
+<https://smart-autocorrect-nkbdlv6jkscf9tea5xwz6d.streamlit.app/>:
 
-No firewall port was opened, no public server was started, and none of this
-task's code deployment was changed - this project is local.
+Provider-managed (not re-implemented by us): HTTPS/TLS termination, WebSocket
+compatible proxy for `/_stcore/stream`, process supervision/restart, ingress.
+Our `.streamlit/config.toml` keeps `enableCORS`/`enableXsrfProtection` **on**
+and does not pin `server.address`, so those settings hold on the cloud.
+
+Observed on the deployed app (2026-09-14, anonymous automated probes):
+* `GET https://…/` -> **200**, Streamlit SPA shell served; TLS active.
+* `GET http://…/` -> **303** redirect to Streamlit's auth/gateway flow
+  (`share.streamlit.io/-/auth/app?redirect_uri=…`), i.e. cleartext HTTP is not
+  served.
+* `GET https://…/_stcore/health` and `/_stcore/host-config` -> the gateway
+  returns the SPA shell (200 HTML), **not** internal config JSON - the private
+  `_stcore` endpoints are not reachable through the gateway.
+* The repo contains no `.env`, no `secrets.toml`, no model weights, and a
+  secret-pattern scan found nothing. Submit-text and model behaviour are the
+  same code paths verified locally by the 56 tests (CPU-only torch wheel,
+  `trust_remote_code=False`, pinned model revision, input caps, inference
+  guard).
+
+Honest caveats for the public demo:
+* The free tier's RAM limit is unpublished. Local measurement of AI Grammar
+  shows ~1.2 GB RSS peak during inference; **AI Grammar may be memory-limited
+  on the free tier** and, if so, is the one feature that can fail there
+  (Spelling mode is unaffected). Verified result: Spelling mode works.
+  AI Grammar: **verified working** on the live free-tier instance (test input
+  `She go to college every day.` returned the corrected output).
+* The "busy" retry message and 7-20 s CPU inference times still apply; the
+  free tier is a shared, limited CPU.
+* Browser-driven, positive XSRF flow was not automated; the behavioural
+  403-on-tokenless-handshake verification above, plus the provider's own
+  enforcement, is what the cloud relies on.
+* No WAF, IP throttles or account-level quotas exist beyond the provider's
+  free-tier rate limits; the app's own input/output caps are the app-level
+  limits. This is an open, single-user-learning demo, not a hardening target.
 
 ## 11. Dependency maintenance & recovery
 
