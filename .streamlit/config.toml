@@ -1,0 +1,16 @@
+# Streamlit configuration for Smart Autocorrect.
+#
+# Local development: `streamlit run app.py` binds to localhost by default, so
+# the app is NOT reachable from other computers on the network. We deliberately
+# do not set `server.address` here: on Streamlit Community Cloud the platform
+# manages its own bind/port, and pinning localhost here would break cloud
+# deploys. See SECURITY_REVIEW.md for the full local vs. public discussion.
+
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true
+enableCORS = true
+enableXsrfProtection = true
+maxUploadSize = 1

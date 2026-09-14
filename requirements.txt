@@ -1,0 +1,8 @@
+# Base dependencies verified locally on Python 3.12.10 (Windows).
+# Deployment: Streamlit Community Cloud reads this file AND the included
+# requirements-ai.txt, so AI Grammar dependencies are installed together.
+streamlit==1.63.0
+pyspellchecker==0.9.0
+
+# AI Grammar dependencies (PyTorch, Transformers, SentencePiece).
+-r requirements-ai.txt

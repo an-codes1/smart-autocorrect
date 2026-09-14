@@ -1,0 +1,13 @@
+# AI dependencies for Smart Autocorrect.
+#
+# On Linux (Streamlit Community Cloud / other containers) we install PyTorch's
+# CPU-only build from the official PyTorch CPU index so we never download the
+# multi-GB CUDA-enabled wheels. On Windows/macOS we use the regular PyPI wheel
+# (CPU-only is the default there).
+#
+# Verified together with the base requirements on Python 3.12.10.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.0+cpu; platform_system == "Linux"
+torch==2.14.0; platform_system != "Linux"
+transformers==5.17.0
+sentencepiece==0.2.2

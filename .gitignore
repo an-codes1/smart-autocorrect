@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+.vscode/
+.idea/
+.streamlit/secrets.toml
+*.log
+
+# Hugging Face model caches (e.g. downloaded model weights)
+.cache/
+.huggingface/
+huggingface_hub/
+models/
+
+# Model weight files - never commit large ML weights
+*.bin
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.ckpt
