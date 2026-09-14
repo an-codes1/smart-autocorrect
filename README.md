@@ -63,12 +63,11 @@ cd <your-local-project-folder>   # e.g. C:\Users\<you>\Documents\AutocorrectTool
 # 1. Create the virtual environment
 python -m venv .venv
 
-# 2. Install the basic (spelling + interface) dependencies
+# 2. Install ALL dependencies (requirements.txt already includes
+#    requirements-ai.txt, so this single command installs the spelling stack
+#    AND the AI Grammar stack)
 .venv\Scripts\python.exe -m pip install --upgrade pip
 .venv\Scripts\python.exe -m pip install -r requirements.txt
-
-# 3. Install the AI (machine learning) dependencies
-.venv\Scripts\python.exe -m pip install -r requirements-ai.txt
 ```
 
 We use `.venv\Scripts\python.exe` directly in these instructions, so pointing
@@ -195,7 +194,10 @@ runtime requirements - install them once with
 .venv\Scripts\python.exe -m bandit -r app.py spelling_engine.py grammar_engine.py
 ```
 
-Static results and the full security review are in `SECURITY_REVIEW.md`.
+Static results and the full security review are in `SECURITY_REVIEW.md`. These
+scans reduce known risk classes (known-vulnerable packages, common Python
+smells); they do **not** prove the app is "secure" - see the honest caveats in
+`SECURITY_REVIEW.md`.
 
 ## Source files
 
@@ -351,8 +353,9 @@ hardening pass:
 * Dev/audit tools: bandit, pip-audit (not runtime dependencies)
 * `pip check` on this environment: "No broken requirements found."
 
-The `requirements*.txt` files use safe version ranges rather than exact pins
-so the project installs on other machines too. No lockfile is shipped. To
-reproduce the tested environment, install inside a fresh `.venv` with both
-`requirements.txt` and `requirements-ai.txt`, then run
+The `requirements*.txt` files use exact pins (`==`) for the versions tested
+together in this project. `requirements.txt` includes `requirements-ai.txt`, so
+there is a single entry point for installs. No lockfile is shipped. To
+reproduce the tested environment, install inside a fresh `.venv` with
+`requirements.txt` (pip resolves `requirements-ai.txt` automatically), then run
 `.venv\Scripts\python.exe -m pip check`.

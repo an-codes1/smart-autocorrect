@@ -15,7 +15,7 @@ app is "secure", unlimited-traffic-safe, or crash-proof.
 | # | Finding | Severity | Affected file | Fix |
 | --- | --- | --- | --- | --- |
 | 1 | Model downloaded without a pinned revision; any Hub change would silently alter behaviour. | Medium | `grammar_engine.py` | Pinned `MODEL_REVISION = 9e4a09d2…3ed78` (verified against the official repo API) and passed `revision=` + explicit `trust_remote_code=False` to both `from_pretrained` calls. |
-| 2 | Transformers 4.57.6 had 8 open advisories (`PYSEC-2025-217`, `PYSEC-2026-2288/2289/2290/3929`). Fixes only exist in the 5.x line. | Medium/High context | `requirements-ai.txt` | Upgraded to `transformers>=5.10.0,<6.0`; installed 5.17.0. `pip-audit --local` now reports **no known vulnerabilities**. None of the 4.5x advisories were reachable from this app, but the upgrade removes the question entirely. The model still loads on 5.x and inference output was re-verified. |
+| 2 | Transformers 4.57.6 had 8 open advisories (`PYSEC-2025-217`, `PYSEC-2026-2288/2289/2290/3929`). Fixes only exist in the 5.x line. | Medium/High context | `requirements-ai.txt` | Upgraded to the transformers 5.x line and exact-pinned `transformers==5.17.0`. `pip-audit --local` now reports **no known vulnerabilities**. None of the 4.5x advisories were reachable from this app, but the upgrade removes the question entirely. The model still loads on 5.x and inference output was re-verified. |
 | 3 | No server-side input limits anywhere; pathological pastes could reach the model or the diff view unbounded. | Medium | `app.py`, `grammar_engine.py`, `spelling_engine.py` | Added hard caps: 10,000 chars (spelling), 8,000 chars + 400 tokens (AI), 256 output tokens, 100 custom words / 40 chars each / 2,000 raw chars, 500 suggestion entries. Oversized input is **rejected with a message, never truncated**. The two character bounds (10,000 app-wide vs 8,000 engine) are intentional and now consistent in the UI: the applicable per-mode limit is shown under the text box **before** submission, and validation happens at the app layer against the mode's own bound, so the message can never contradict the engine. |
 | 4 | Repeated typos and long/repetitive words could produce thousands of suggestion widgets and heavy edit-distance work. | Medium | `spelling_engine.py`, `app.py` | Candidate results are memoized per request; words over 40 chars or long single-character runs are skipped; a 500-entry suggestion cap stops scanning; the reviewer now shows **one selectbox per distinct word** instead of one per occurrence. |
 | 5 | No bound on concurrent AI inference; a shared cached model could run overlapping generations. | Medium | `grammar_engine.py` | Added `InferenceGuard`, a process-wide single-slot semaphore with a **short bounded wait (10 s)** and a clear busy/retry message, so a second caller is not left staring at a spinner (a 90 s wait had this risk). The slot always releases, including on error (context-manager + verified by a test). |
@@ -47,7 +47,8 @@ render.
   `save_pretrained` on chat-template tokenizers, and causal-LM
   `config.json`/LightGlue tricks that expect an attacker-controlled model
   repository). They were not suppressed - they were fixed by upgrading
-  `requirements-ai.txt` to `transformers>=5.10.0,<6.0` (5.17.0 installed).
+  `requirements-ai.txt` to the transformers 5.x line (5.17.0 installed; the file
+  now pins `transformers==5.17.0`, the tested-and-audited version).
 
 ## 3. Static analysis
 
@@ -273,8 +274,11 @@ Honest caveats for the public demo:
 # Whole-project scan (the "*.venv*" pattern is required on Windows):
 .venv\Scripts\python.exe -m bandit -r . -x "*.venv*"
 
-# Apply AI-dependency updates within the allowed ranges:
-.venv\Scripts\python.exe -m pip install --upgrade -r requirements-ai.txt
+# AI-dependency updates are exact pins on purpose. To change an AI dependency,
+# edit the desired ==pin in requirements-ai.txt first, then install and re-run
+# the audits above. (pip install --upgrade will not move an exact pin.)
+# To install everything from the single entrypoint file:
+#   .venv\Scripts\python.exe -m pip install -r requirements.txt
 
 # If a dependency upgrade ever breaks the model load, recover with:
 .venv\Scripts\python.exe -m pip install -r requirements-ai.txt -r requirements.txt

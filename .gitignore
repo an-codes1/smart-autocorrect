@@ -9,7 +9,14 @@ build/
 .vscode/
 .idea/
 .streamlit/secrets.toml
+.streamlit/credentials.toml
 *.log
+
+# Local backups / scratch files
+*.bak
+*.backup
+*.old
+*~
 
 # Hugging Face model caches (e.g. downloaded model weights)
 .cache/
